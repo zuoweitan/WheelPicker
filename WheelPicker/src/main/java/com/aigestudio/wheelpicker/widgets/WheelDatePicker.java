@@ -52,7 +52,9 @@ public class WheelDatePicker extends LinearLayout implements WheelPicker.OnItemS
 
         setMaximumWidthTextYear();
         mPickerMonth.setMaximumWidthText("00");
+        mPickerMonth.setCyclic(true);
         mPickerDay.setMaximumWidthText("00");
+        mPickerDay.setCyclic(true);
 
         mTVYear = (TextView) findViewById(R.id.wheel_date_picker_year_tv);
         mTVMonth = (TextView) findViewById(R.id.wheel_date_picker_month_tv);

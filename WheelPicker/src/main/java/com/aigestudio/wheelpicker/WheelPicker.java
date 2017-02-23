@@ -11,6 +11,8 @@ import android.graphics.Region;
 import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Handler;
+import android.os.Parcel;
+import android.os.Parcelable;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.util.Log;
@@ -66,6 +68,7 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
      */
     private OnItemSelectedListener mOnItemSelectedListener;
     private OnWheelChangeListener mOnWheelChangeListener;
+    private OnCycleChangedListener onCycleChangedListener;
 
     private Rect mRectDrawn;
     private Rect mRectIndicatorHead, mRectIndicatorFoot;
@@ -116,7 +119,7 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
      *
      * @see #setItemTextSize(int)
      */
-    private int mItemTextSize;
+    private int mItemTextSize, mSelectItemTextSize;
 
     /**
      * 指示器尺寸
@@ -276,6 +279,10 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
 
     private boolean isDebug;
 
+    private int currLoops;
+    private boolean scrollUp;
+    private int firstDrawnPos;
+
     public WheelPicker(Context context) {
         this(context, null);
     }
@@ -289,7 +296,7 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
                 .getStringArray(idData == 0 ? R.array.WheelArrayDefault : idData));
         mItemTextSize = a.getDimensionPixelSize(R.styleable.WheelPicker_wheel_item_text_size,
                 getResources().getDimensionPixelSize(R.dimen.WheelItemTextSize));
-        mVisibleItemCount = a.getInt(R.styleable.WheelPicker_wheel_visible_item_count, 7);
+        mVisibleItemCount = a.getInt(R.styleable.WheelPicker_wheel_visible_item_count, 3);
         mSelectedItemPosition = a.getInt(R.styleable.WheelPicker_wheel_selected_item_position, 0);
         hasSameWidth = a.getBoolean(R.styleable.WheelPicker_wheel_same_width, false);
         mTextMaxWidthPosition =
@@ -297,6 +304,8 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
         mMaxWidthText = a.getString(R.styleable.WheelPicker_wheel_maximum_width_text);
         mSelectedItemTextColor = a.getColor
                 (R.styleable.WheelPicker_wheel_selected_item_text_color, -1);
+        mSelectItemTextSize = a.getDimensionPixelSize(R.styleable.WheelPicker_wheel_selected_item_text_size,
+                getResources().getDimensionPixelSize(R.dimen.WheelItemTextSize));
         mItemTextColor = a.getColor(R.styleable.WheelPicker_wheel_item_text_color, 0xFF888888);
         mItemSpace = a.getDimensionPixelSize(R.styleable.WheelPicker_wheel_item_space,
                 getResources().getDimensionPixelSize(R.dimen.WheelItemSpace));
@@ -348,6 +357,29 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
         mMatrixDepth = new Matrix();
     }
 
+    @Override
+    protected Parcelable onSaveInstanceState() {
+        Parcelable parcelable = super.onSaveInstanceState();
+        SavedState ss = new SavedState(parcelable);
+        ss.selectedItemPos = mCurrentItemPosition;
+        ss.loops = currLoops;
+        return ss;
+    }
+
+    @Override
+    protected void onRestoreInstanceState(Parcelable state) {
+        if(!(state instanceof SavedState)) {
+            super.onRestoreInstanceState(state);
+            return;
+        }
+
+        SavedState ss = (SavedState)state;
+        super.onRestoreInstanceState(ss.getSuperState());
+        mSelectedItemPosition = ss.selectedItemPos;
+        currLoops = ss.loops;
+        setSelectedItemPosition(mSelectedItemPosition);
+    }
+
     private void updateVisibleItemCount() {
         if (mVisibleItemCount < 2)
             throw new ArithmeticException("Wheel's visible item count can not be less than 2!");
@@ -361,6 +393,11 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
     }
 
     private void computeTextSize() {
+        boolean reset = false;
+        if (mSelectItemTextSize > mItemTextSize){
+            reset = true;
+            mPaint.setTextSize(mSelectItemTextSize);
+        }
         mTextMaxWidth = mTextMaxHeight = 0;
         if (hasSameWidth) {
             mTextMaxWidth = (int) mPaint.measureText(String.valueOf(mData.get(0)));
@@ -378,6 +415,9 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
         }
         Paint.FontMetrics metrics = mPaint.getFontMetrics();
         mTextMaxHeight = (int) (metrics.bottom - metrics.top);
+        if (reset){
+            mPaint.setTextSize(mItemTextSize);
+        }
     }
 
     private void updateItemTextAlign() {
@@ -514,7 +554,7 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
     }
 
     private void computeCurrentItemRect() {
-        if (!hasCurtain && mSelectedItemTextColor == -1) return;
+        if (!hasCurtain && mSelectedItemTextColor == mItemTextColor) return;
         mRectCurrentItem.set(mRectDrawn.left, mWheelCenterY - mHalfItemHeight, mRectDrawn.right,
                 mWheelCenterY + mHalfItemHeight);
     }
@@ -524,6 +564,22 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
         if (null != mOnWheelChangeListener)
             mOnWheelChangeListener.onWheelScrolled(mScrollOffsetY);
         int drawnDataStartPos = -mScrollOffsetY / mItemHeight - mHalfDrawnItemCount;
+        int newPos = drawnDataStartPos % mData.size();
+        if (firstDrawnPos != newPos){
+            firstDrawnPos = newPos;
+            newPos =  newPos < 0 ? newPos + mData.size() : newPos;
+            if (newPos == mData.size() - 2 && mLastPointY != 0){
+                if (scrollUp){
+                    currLoops ++;
+                } else {
+                    currLoops --;
+                }
+                if (onCycleChangedListener != null) {
+                    onCycleChangedListener.onCycleChanged(currLoops);
+                }
+            }
+        }
+
         for (int drawnDataPos = drawnDataStartPos + mSelectedItemPosition,
              drawnOffsetPos = -mHalfDrawnItemCount;
              drawnDataPos < drawnDataStartPos + mSelectedItemPosition + mDrawnItemCount;
@@ -533,11 +589,13 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
                 int actualPos = drawnDataPos % mData.size();
                 actualPos = actualPos < 0 ? (actualPos + mData.size()) : actualPos;
                 data = String.valueOf(mData.get(actualPos));
+
             } else {
                 if (isPosInRang(drawnDataPos))
                     data = String.valueOf(mData.get(drawnDataPos));
             }
             mPaint.setColor(mItemTextColor);
+            mPaint.setTextSize(mItemTextSize);
             mPaint.setStyle(Paint.Style.FILL);
             int mDrawnItemCenterY = mDrawnCenterY + (drawnOffsetPos * mItemHeight) +
                     mScrollOffsetY % mItemHeight;
@@ -601,7 +659,7 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
 
             // 判断是否需要为当前数据项绘制不同颜色
             // Judges need to draw different color for current item or not
-            if (mSelectedItemTextColor != -1) {
+            if (mSelectedItemTextColor != mItemTextColor) {
                 canvas.save();
                 if (isCurved) canvas.concat(mMatrixRotate);
                 canvas.clipRect(mRectCurrentItem, Region.Op.DIFFERENCE);
@@ -609,6 +667,7 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
                 canvas.restore();
 
                 mPaint.setColor(mSelectedItemTextColor);
+                mPaint.setTextSize(mSelectItemTextSize);
                 canvas.save();
                 if (isCurved) canvas.concat(mMatrixRotate);
                 canvas.clipRect(mRectCurrentItem);
@@ -705,6 +764,7 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
                 if (Math.abs(move) < 1) break;
                 mScrollOffsetY += move;
                 mLastPointY = (int) event.getY();
+                scrollUp = move < 0;
                 invalidate();
                 break;
             case MotionEvent.ACTION_UP:
@@ -730,6 +790,7 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
                     mScroller.startScroll(0, mScrollOffsetY, 0,
                             computeDistanceToEndPoint(mScrollOffsetY % mItemHeight));
                 }
+                scrollUp = mTracker.getYVelocity() < 0;
                 // 校正坐标
                 // Correct coordinates
                 if (!isCyclic)
@@ -956,6 +1017,17 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
         invalidate();
     }
 
+    public int getmSelectItemTextSize() {
+        return mSelectItemTextSize;
+    }
+
+    public void setmSelectItemTextSize(int size) {
+        mSelectItemTextSize = size;
+        computeTextSize();
+        requestLayout();
+        invalidate();
+    }
+
     @Override
     public int getItemSpace() {
         return mItemSpace;
@@ -1097,6 +1169,12 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
         void onItemSelected(WheelPicker picker, Object data, int position);
     }
 
+    //for Cycle
+
+    public interface OnCycleChangedListener{
+        void onCycleChanged(int currentLoop);
+    }
+
     /**
      * 滚轮选择器滚动时监听接口
      *
@@ -1162,5 +1240,37 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
          *              Express WheelPicker in state of scrolling
          */
         void onWheelScrollStateChanged(int state);
+    }
+
+    static class SavedState extends BaseSavedState{
+        int selectedItemPos;
+        int loops;
+
+        public SavedState(Parcelable superState) {
+            super(superState);
+        }
+
+        public SavedState(Parcel source) {
+            super(source);
+        }
+
+        @Override
+        public void writeToParcel(Parcel out, int flags) {
+            super.writeToParcel(out, flags);
+            out.writeInt(selectedItemPos);
+            out.writeInt(loops);
+        }
+
+        public static final Parcelable.Creator<SavedState> CREATOR = new Creator<SavedState>() {
+            @Override
+            public SavedState createFromParcel(Parcel parcel) {
+                return new SavedState(parcel);
+            }
+
+            @Override
+            public SavedState[] newArray(int i) {
+                return new SavedState[0];
+            }
+        };
     }
 }
