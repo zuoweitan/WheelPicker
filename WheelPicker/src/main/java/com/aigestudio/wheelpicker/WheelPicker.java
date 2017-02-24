@@ -570,14 +570,14 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
         if (null != mOnWheelChangeListener)
             mOnWheelChangeListener.onWheelScrolled(mScrollOffsetY);
         int drawnDataStartPos = -mScrollOffsetY / mItemHeight - mHalfDrawnItemCount;
-        int newPos = drawnDataStartPos % mData.size();
+        int newPos = (drawnDataStartPos + mSelectedItemPosition + 2) % mData.size();
         if (firstDrawnPos != newPos){
             firstDrawnPos = newPos;
             newPos =  newPos < 0 ? newPos + mData.size() : newPos;
-            if (newPos == mData.size() - 2 && mLastPointY != 0){
-                if (scrollUp){
+            if ((newPos == 0 || newPos == mData.size() - 1) && mLastPointY != 0){
+                if (scrollUp && newPos == 0){
                     currLoops ++;
-                } else {
+                } else if (!scrollUp && newPos == mData.size() - 1){
                     currLoops --;
                 }
                 if (onCycleChangedListener != null) {
