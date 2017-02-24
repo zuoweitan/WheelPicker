@@ -198,7 +198,7 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
     /**
      * 滚轮选择器绘制中心坐标
      */
-    private int mDrawnCenterX, mDrawnCenterY;
+    private int mDrawnCenterX, mDrawnCenterY, selectedDrawnCenterY;
 
     /**
      * 滚轮选择器视图区域在Y轴方向上的偏移值
@@ -533,6 +533,12 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
                 break;
         }
         mDrawnCenterY = (int) (mWheelCenterY - ((mPaint.ascent() + mPaint.descent()) / 2));
+
+        if (mSelectItemTextSize > mItemTextSize) {
+            mPaint.setTextSize(mSelectItemTextSize);
+            selectedDrawnCenterY = (int) (mWheelCenterY - ((mPaint.ascent() + mPaint.descent()) / 2));
+            mPaint.setTextSize(mItemTextSize);
+        }
     }
 
     private void computeFlingLimitY() {
@@ -598,6 +604,8 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
             mPaint.setTextSize(mItemTextSize);
             mPaint.setStyle(Paint.Style.FILL);
             int mDrawnItemCenterY = mDrawnCenterY + (drawnOffsetPos * mItemHeight) +
+                    mScrollOffsetY % mItemHeight;
+            int selectedDrawnItemCenterYTemp = selectedDrawnCenterY + (drawnOffsetPos * mItemHeight) +
                     mScrollOffsetY % mItemHeight;
 
             int distanceToCenter = 0;
@@ -668,6 +676,7 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
 
                 mPaint.setColor(mSelectedItemTextColor);
                 mPaint.setTextSize(mSelectItemTextSize);
+                drawnCenterY = isCurved ? mSelectItemTextSize - distanceToCenter : selectedDrawnItemCenterYTemp;
                 canvas.save();
                 if (isCurved) canvas.concat(mMatrixRotate);
                 canvas.clipRect(mRectCurrentItem);
@@ -1017,11 +1026,11 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
         invalidate();
     }
 
-    public int getmSelectItemTextSize() {
+    public int getSelectItemTextSize() {
         return mSelectItemTextSize;
     }
 
-    public void setmSelectItemTextSize(int size) {
+    public void setSelectItemTextSize(int size) {
         mSelectItemTextSize = size;
         computeTextSize();
         requestLayout();
